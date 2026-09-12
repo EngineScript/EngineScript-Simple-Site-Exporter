@@ -7,13 +7,14 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 
 WORDPRESS_LATEST_VERSION = os.environ.get("WORDPRESS_LATEST_VERSION")
 WORDPRESS_VERSION_CHECK_FILE = Path("wordpress-version-check.json")
-SCAN_EXTENSIONS = {".php", ".md", ".txt"}
+METADATA_PATHS = {Path("enginescript-site-exporter.php"), Path("readme.txt")}
 DEFAULT_EXCLUDED_DIRS = {
     ".git",
     "build",
@@ -25,10 +26,10 @@ DEFAULT_EXCLUDED_DIRS = {
     "vendor",
 }
 TESTED_UP_TO_PATTERN = re.compile(
-    r"\btested\s+up\s+to\s*:\s*([0-9]+(?:\.[0-9]+){1,2})\b",
+    r"^\s*(?:\*\s*)?tested\s+up\s+to\s*:\s*([0-9]+(?:\.[0-9]+){1,2})\s*$",
     re.IGNORECASE,
 )
-TESTED_UP_TO_LABEL_PATTERN = re.compile(r"\btested\s+up\s+to\s*:", re.IGNORECASE)
+TESTED_UP_TO_LABEL_PATTERN = re.compile(r"^\s*(?:\*\s*)?tested\s+up\s+to\s*:", re.IGNORECASE)
 VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){1,2}$")
 
 
@@ -39,7 +40,7 @@ def main() -> int:
     findings = find_tested_up_to_entries(excluded_dirs)
 
     if not findings:
-        message = "No Tested up to metadata was found in PHP, Markdown, or text files."
+        message = "No Tested up to metadata was found in the authoritative plugin/readme headers."
         print_github_error(message)
         write_summary(latest_version, [], [message])
         return 1
@@ -48,6 +49,8 @@ def main() -> int:
     updated_paths = []
 
     if args.fix and failures:
+        if any(finding["version"] is None for finding in findings):
+            raise ValueError("Invalid metadata requires manual correction; no files changed.")
         updated_paths = update_tested_up_to_entries(findings, latest_version)
         findings = find_tested_up_to_entries(excluded_dirs)
         failures = get_failures(latest_version, findings)
@@ -86,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fix",
         action="store_true",
-        help="Update stale or invalid Tested up to entries to the latest WordPress release.",
+        help="Update stale Tested up to headers; invalid metadata requires manual correction.",
     )
 
     return parser.parse_args()
@@ -105,12 +108,15 @@ def get_latest_wordpress_major_minor() -> str:
     versions = []
 
     for offer in payload.get("offers", []):
+        if offer.get("response") != "upgrade":
+            continue
         version = offer.get("current") or offer.get("version")
-        if isinstance(version, str) and VERSION_PATTERN.match(version):
-            versions.append(version)
+        if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
+            raise ValueError("Invalid stable WordPress offer.")
+        versions.append(version)
 
-    if not versions:
-        raise RuntimeError("Could not determine the latest WordPress version.")
+    if len(set(versions)) != 1:
+        raise RuntimeError("Expected exactly one stable WordPress version.")
 
     latest = max(versions, key=version_sort_key)
     return normalize_major_minor(latest)
@@ -119,7 +125,7 @@ def get_latest_wordpress_major_minor() -> str:
 def normalize_major_minor(version: str) -> str:
     parts = version.split(".")
 
-    if len(parts) < 2 or not all(part.isdigit() for part in parts):
+    if not VERSION_PATTERN.fullmatch(version):
         raise ValueError(f"Invalid WordPress version: {version}")
 
     return ".".join(parts[:2])
@@ -145,13 +151,17 @@ def find_tested_up_to_entries(
         if not should_scan(path, excluded_dirs):
             continue
 
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
+        count = 0
 
         for line_number, line in enumerate(lines, 1):
+            if (path.suffix == ".php" and "*/" in line) or (path.suffix == ".txt" and not line.strip()):
+                break
             if not TESTED_UP_TO_LABEL_PATTERN.search(line):
                 continue
 
             match = TESTED_UP_TO_PATTERN.search(line)
+            count += 1
             findings.append(
                 {
                     "path": path.as_posix(),
@@ -159,32 +169,26 @@ def find_tested_up_to_entries(
                     "version": match.group(1) if match else None,
                 }
             )
+        if count != 1:
+            raise ValueError(f"Expected one Tested up to header in {path}.")
 
     return findings
 
 
 def get_scanned_files(excluded_dirs: set[str]) -> list[Path]:
-    root = Path.cwd()
-    paths = []
-
-    for current_dir, dirnames, filenames in os.walk(root):
-        dirnames[:] = [
-            dirname for dirname in dirnames if dirname not in excluded_dirs
-        ]
-
-        current_path = Path(current_dir)
-        for filename in filenames:
-            path = current_path / filename
-            relative_path = path.relative_to(root)
-
-            if should_scan(relative_path, excluded_dirs):
-                paths.append(relative_path)
-
-    return sorted(paths)
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"], check=True, capture_output=True
+    ).stdout.decode("utf-8").split("\0")
+    if not all(path.as_posix() in tracked for path in METADATA_PATHS):
+        raise ValueError("Authoritative metadata files must both be tracked.")
+    for path in METADATA_PATHS:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Unsafe metadata path: {path}")
+    return sorted(METADATA_PATHS)
 
 
 def should_scan(path: Path, excluded_dirs: set[str]) -> bool:
-    if path.suffix.lower() not in SCAN_EXTENSIONS:
+    if path not in METADATA_PATHS:
         return False
 
     return not any(part in excluded_dirs for part in path.parts)
@@ -259,20 +263,7 @@ def replace_tested_up_to_line(line: str, latest_version: str) -> str:
     if match:
         return f"{line[:match.start(1)]}{latest_version}{line[match.end(1):]}"
 
-    label_match = TESTED_UP_TO_LABEL_PATTERN.search(line)
-    if not label_match:
-        return line
-
-    line_ending = ""
-    content = line
-    if line.endswith("\r\n"):
-        content = line[:-2]
-        line_ending = "\r\n"
-    elif line.endswith("\n"):
-        content = line[:-1]
-        line_ending = "\n"
-
-    return f"{content[:label_match.end()]} {latest_version}{line_ending}"
+    raise ValueError("Refusing to rewrite an invalid metadata line.")
 
 
 def format_failure(failure: dict[str, str | int]) -> str:

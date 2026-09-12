@@ -15,18 +15,4 @@
         <file name="vendor/php-stubs/wordpress-stubs/wordpress-stubs.php" />
         <file name="stubs/psalm-wordpress-constants.php" />
     </stubs>
-
-    <issueHandlers>
-        <ForbiddenCode>
-            <errorLevel type="suppress">
-                <file name="includes/export.php" />
-            </errorLevel>
-        </ForbiddenCode>
-        <ParadoxicalCondition>
-            <errorLevel type="suppress">
-                <file name="enginescript-site-exporter.php" />
-                <directory name="includes" />
-            </errorLevel>
-        </ParadoxicalCondition>
-    </issueHandlers>
 </psalm>

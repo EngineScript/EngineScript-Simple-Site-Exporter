@@ -5,7 +5,7 @@
          xsi:schemaLocation="http://pmd.sf.net/ruleset/1.0.0 http://pmd.sf.net/ruleset_xml_schema.xsd"
          xsi:noNamespaceSchemaLocation="http://pmd.sf.net/ruleset_xml_schema.xsd">
 
-    <description>WordPress-compatible PHPMD rules - enforces WordPress coding standards and spacing conventions</description>
+    <description>Code quality and naming checks with WordPress-compatible thresholds; PHPCS handles formatting.</description>
 
     <!-- WordPress-specific file patterns to exclude -->
     <exclude-pattern>*/vendor/*</exclude-pattern>
@@ -17,9 +17,9 @@
 
     <!-- Clean Code Rules (with WordPress exceptions) -->
     <rule ref="rulesets/cleancode.xml">
-        <!-- Exclude ElseExpression - WordPress often requires else for security patterns -->
+        <!-- Allow explicit else branches; review branch behavior independently. -->
         <exclude name="ElseExpression"/>
-        <!-- Exclude MissingImport - WordPress core classes are auto-loaded -->
+        <!-- Global WordPress and PHP classes do not require namespace imports here. -->
         <exclude name="MissingImport"/>
         <!-- Exclude StaticAccess - Allow for singleton patterns common in WordPress -->
         <exclude name="StaticAccess"/>
@@ -85,7 +85,7 @@
     
     <!-- Controversial Rules (with WordPress exceptions) -->
     <rule ref="rulesets/controversial.xml">
-        <!-- Exclude Superglobals - WordPress securely uses $_GET, $_POST, etc. -->
+        <!-- Request handlers use superglobals; each access still requires boundary validation. -->
         <exclude name="Superglobals"/>
         <!-- Exclude CamelCaseClassName - WordPress uses Snake_Case_Class_Names -->
         <exclude name="CamelCaseClassName"/>
@@ -103,9 +103,9 @@
     <rule ref="rulesets/design.xml">
         <!-- Exclude ExitExpression - Required for WordPress wp_die(), exit, etc. -->
         <exclude name="ExitExpression"/>
-        <!-- Exclude EvalExpression - WordPress sometimes uses eval for dynamic content -->
+        <!-- Historical rule exclusion, not approval to introduce eval into plugin code. -->
         <exclude name="EvalExpression"/>
-        <!-- Exclude GotoStatement - WordPress core sometimes uses goto -->
+        <!-- Historical rule exclusion, not evidence that goto is needed in this plugin. -->
         <exclude name="GotoStatement"/>
     </rule>
     

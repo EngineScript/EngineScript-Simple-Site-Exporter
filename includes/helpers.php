@@ -1,16 +1,21 @@
 <?php
 /**
- * Helper utilities: logging, IP detection, export paths, redirects, and filesystem init.
+ * Helper utilities: logging, IP detection, export paths, redirects, and filesystem initialization.
  *
  * @package EngineScript_Site_Exporter
  */
 
+/**
+ * Prevent direct execution of this component.
+ *
+ * @psalm-suppress ParadoxicalCondition Files may be requested outside the loaded plugin bootstrap.
+ */
 if ( ! defined( 'ABSPATH' ) ) {
 	return;
 }
 
 /**
- * Safely get client IP address.
+ * Safely gets the client IP address.
  *
  * @since 1.0.0
  * @return string Client IP address or 'unknown' if not available.
@@ -26,7 +31,57 @@ function sse_get_client_ip(): string {
 }
 
 /**
- * Stores important log messages in database for review.
+ * Narrows a value returned by an untyped WordPress boundary to an array.
+ *
+ * @since 2.1.1
+ * @param mixed $value Value to normalize.
+ * @return array<array-key, mixed> The supplied array, or an empty array.
+ */
+function sse_normalize_array_value( mixed $value ): array {
+	return is_array( $value ) ? $value : [];
+}
+
+/**
+ * Narrows a value returned by an untyped WordPress boundary to a string.
+ *
+ * @since 2.1.1
+ * @param mixed  $value    Value to normalize.
+ * @param string $fallback Value returned when the supplied value is not a string.
+ * @return string The supplied string or fallback.
+ */
+function sse_normalize_string_value( mixed $value, string $fallback = '' ): string {
+	return is_string( $value ) ? $value : $fallback;
+}
+
+/**
+ * Narrows a numeric boundary value to a non-negative integer.
+ *
+ * @since 2.1.1
+ * @param mixed $value Value to normalize.
+ * @return int|false Non-negative integer, or false for an invalid value.
+ */
+function sse_normalize_nonnegative_integer( mixed $value ): int|false {
+	if ( ! is_numeric( $value ) ) {
+		return false;
+	}
+
+	$integer = (int) $value;
+	return $integer >= 0 ? $integer : false;
+}
+
+/**
+ * Narrows a filesystem metadata value to its supported scalar types.
+ *
+ * @since 2.1.1
+ * @param mixed $value Value returned by the WordPress Filesystem API.
+ * @return int|string|false Supported metadata value, or false.
+ */
+function sse_normalize_filesystem_scalar( mixed $value ): int|string|false {
+	return is_int( $value ) || is_string( $value ) ? $value : false;
+}
+
+/**
+ * Stores important log messages in the database for review.
  *
  * @since 1.0.0
  * @param string $message The log message.
@@ -34,12 +89,12 @@ function sse_get_client_ip(): string {
  * @return void
  */
 function sse_store_log_in_database( string $message, string $level ): void {
-	// Store last 20 important messages in an option.
-	$logs   = get_option( 'sse_error_logs', [] );
+	$logs = sse_get_retained_stored_logs( get_option( 'sse_error_logs', [] ), time() - ( 7 * DAY_IN_SECONDS ) );
+
 	$logs[] = [
 		'time'    => time(),
-		'level'   => $level,
-		'message' => $message,
+		'level'   => sanitize_key( $level ),
+		'message' => sse_sanitize_stored_log_message( $message ),
 		'user_id' => get_current_user_id(),
 		'ip'      => sse_get_client_ip(),
 	];
@@ -53,7 +108,86 @@ function sse_store_log_in_database( string $message, string $level ): void {
 }
 
 /**
- * Outputs log message to the WordPress debug log.
+ * Normalizes stored error/security logs and removes expired records.
+ *
+ * @since 2.1.1
+ * @param mixed $stored_logs Untrusted option value.
+ * @param int   $cutoff      Oldest retained Unix timestamp.
+ * @return array<int,array{time:int,level:string,message:string,user_id:int,ip:string}> Retained records.
+ */
+function sse_get_retained_stored_logs( mixed $stored_logs, int $cutoff ): array {
+	$logs     = sse_normalize_array_value( $stored_logs );
+	$retained = [];
+
+	foreach ( $logs as $log ) {
+		if (
+			! is_array( $log )
+			|| ! isset( $log['time'], $log['level'], $log['message'], $log['user_id'], $log['ip'] )
+			|| ! is_numeric( $log['time'] )
+			|| (int) $log['time'] < $cutoff
+			|| ! is_string( $log['level'] )
+			|| ! is_string( $log['message'] )
+			|| ! is_numeric( $log['user_id'] )
+			|| ! is_string( $log['ip'] )
+		) {
+			continue;
+		}
+
+		$retained[] = [
+			'time'    => (int) $log['time'],
+			'level'   => sanitize_key( $log['level'] ),
+			'message' => sse_sanitize_stored_log_message( $log['message'] ),
+			'user_id' => (int) $log['user_id'],
+			'ip'      => sanitize_text_field( $log['ip'] ),
+		];
+	}
+
+	return array_slice( $retained, -20 );
+}
+
+/**
+ * Prunes expired stored error/security logs without requiring a later append.
+ *
+ * @since 2.1.1
+ * @return int Number of records removed or normalized away.
+ */
+function sse_prune_expired_stored_logs(): int {
+	$stored_logs = sse_normalize_array_value( get_option( 'sse_error_logs', [] ) );
+	$original    = $stored_logs;
+	$retained    = sse_get_retained_stored_logs( $stored_logs, time() - ( 7 * DAY_IN_SECONDS ) );
+	$removed     = max( 0, count( $original ) - count( $retained ) );
+
+	// update_option() avoids a database write when the normalized value is unchanged.
+	update_option( 'sse_error_logs', $retained, false );
+
+	return $removed;
+}
+
+/**
+ * Removes local absolute paths and bounds a database-stored log message.
+ *
+ * @since 2.1.1
+ * @param string $message Log message.
+ * @return string Sanitized, bounded message.
+ */
+function sse_sanitize_stored_log_message( string $message ): string {
+	$known_paths = [ ABSPATH, get_temp_dir() ];
+	foreach ( $known_paths as $known_path ) {
+		if ( '' !== $known_path ) {
+			$message = str_replace( [ $known_path, wp_normalize_path( $known_path ) ], '[path]/', $message );
+		}
+	}
+
+	$without_paths = preg_replace( '#(?<![A-Za-z0-9])(?:[A-Za-z]:[\\\\/]|/)(?:[^\s|]+[\\\\/])*[^\s|]+#', '[path]', $message );
+	if ( is_string( $without_paths ) ) {
+		$message = $without_paths;
+	}
+
+	return substr( sanitize_text_field( $message ), 0, 1000 );
+}
+
+/**
+ * Outputs a message to the WordPress debug log.
  *
  * @since 1.0.0
  * @param string $formatted_message The formatted log message.
@@ -69,11 +203,11 @@ function sse_output_log_message( string $formatted_message ): void {
 }
 
 /**
- * Safely log plugin messages
+ * Logs plugin messages when WordPress debug logging is enabled.
  *
  * @since 1.0.0
  * @param string $message The message to log.
- * @param string $level   The log level (error, warning, info).
+ * @param string $level   The log level (error, warning, info, or security).
  * @return void
  */
 function sse_log( string $message, string $level = 'info' ): void {
@@ -98,14 +232,14 @@ function sse_log( string $message, string $level = 'info' ): void {
 
 	sse_output_log_message( $formatted_message );
 
-	// Store logs in the database (errors and security events to prevent issues).
+	// Store only errors and security events as bounded database records.
 	if ( 'error' === $level || 'security' === $level ) {
 		sse_store_log_in_database( $message, $level );
 	}
 }
 
 /**
- * Safely get the PHP execution time limit.
+ * Safely gets the PHP execution time limit.
  *
  * @since 1.0.0
  * @return int Current PHP execution time limit in seconds.
@@ -181,13 +315,14 @@ function sse_is_engine_script_archive_filename( string $filename ): bool {
  * Gets the private export directory path.
  *
  * Exports contain a full database dump and site files, so they should not live
- * in the public uploads tree. WordPress' temp directory is the safest native
- * default and can be moved with WP_TEMP_DIR when a host needs a custom path.
+ * in the public uploads tree. WordPress supplies the temporary directory;
+ * export setup rejects it if it resolves inside the web root. Hosts can set
+ * WP_TEMP_DIR to a private writable location.
  *
  * @since 2.0.0
  * @return string|WP_Error Export directory path on success, WP_Error on failure.
  */
-function sse_get_export_directory_path() {
+function sse_get_export_directory_path(): string|WP_Error {
 	$temp_dir = get_temp_dir();
 	if ( '' === $temp_dir ) {
 		return new WP_Error( 'temp_dir_unavailable', __( 'Could not determine a private temporary directory for exports.', 'enginescript-site-exporter' ) );
@@ -253,7 +388,7 @@ function sse_is_export_private_directory_name( string $directory_name ): bool {
 function sse_generate_private_export_directory_name(): string {
 	try {
 		$random_suffix = bin2hex( random_bytes( 16 ) );
-	} catch ( Exception $e ) {
+	} catch ( Exception ) {
 		$random_suffix = '';
 		for ( $index = 0; $index < 32; ++$index ) {
 			$random_suffix .= dechex( wp_rand( 0, 15 ) );
@@ -286,15 +421,14 @@ function sse_has_private_mode( string $path ): bool {
  * @param string $path Path to inspect.
  * @return int|false Octal permissions as an integer, or false on failure.
  */
-function sse_get_filesystem_mode( string $path ) {
-	$filesystem_init = sse_init_filesystem();
-	if ( is_wp_error( $filesystem_init ) ) {
+function sse_get_filesystem_mode( string $path ): int|false {
+	$filesystem = sse_get_filesystem();
+	if ( is_wp_error( $filesystem ) ) {
 		return false;
 	}
 
-	global $wp_filesystem;
-	$chmod = $wp_filesystem->getchmod( $path );
-	if ( ! is_string( $chmod ) && ! is_int( $chmod ) ) {
+	$chmod = sse_normalize_filesystem_scalar( $filesystem->getchmod( $path ) );
+	if ( false === $chmod ) {
 		return false;
 	}
 
@@ -313,18 +447,17 @@ function sse_get_filesystem_mode( string $path ) {
  * @return bool True when the file exists and is non-empty.
  */
 function sse_filesystem_file_has_content( string $file_path ): bool {
-	$filesystem_init = sse_init_filesystem();
-	if ( is_wp_error( $filesystem_init ) ) {
+	$filesystem = sse_get_filesystem();
+	if ( is_wp_error( $filesystem ) ) {
 		return false;
 	}
 
-	global $wp_filesystem;
-	if ( ! $wp_filesystem->exists( $file_path ) || ! $wp_filesystem->is_file( $file_path ) ) {
+	if ( ! $filesystem->exists( $file_path ) || ! $filesystem->is_file( $file_path ) ) {
 		return false;
 	}
 
-	$file_size = $wp_filesystem->size( $file_path );
-	return is_numeric( $file_size ) && (int) $file_size > 0;
+	$file_size = sse_normalize_nonnegative_integer( $filesystem->size( $file_path ) );
+	return false !== $file_size && $file_size > 0;
 }
 
 /**
@@ -336,13 +469,12 @@ function sse_filesystem_file_has_content( string $file_path ): bool {
  * @return bool True when chmod succeeds and no group/public bits remain.
  */
 function sse_chmod_private_path( string $path, int $mode ): bool {
-	$filesystem_init = sse_init_filesystem();
-	if ( is_wp_error( $filesystem_init ) ) {
+	$filesystem = sse_get_filesystem();
+	if ( is_wp_error( $filesystem ) ) {
 		return false;
 	}
 
-	global $wp_filesystem;
-	if ( ! $wp_filesystem->chmod( $path, $mode ) ) {
+	if ( ! $filesystem->chmod( $path, $mode ) ) {
 		return false;
 	}
 
@@ -374,6 +506,26 @@ function sse_chmod_private_file( string $file_path ): bool {
 }
 
 /**
+ * Gets the canonical exporter page URL for this installation mode.
+ *
+ * Single-site installs use the Tools page. Multisite installs use the one
+ * network-level page registered beneath Network Settings.
+ *
+ * @since 2.1.1
+ * @param array<string, string> $args Optional query arguments.
+ * @return string Canonical exporter admin URL.
+ */
+function sse_get_exporter_admin_page_url( array $args = [] ): string {
+	$page_args = array_merge(
+		$args,
+		[ 'page' => 'enginescript-site-exporter' ]
+	);
+	$admin_url = is_multisite() ? network_admin_url( 'settings.php' ) : admin_url( 'tools.php' );
+
+	return add_query_arg( $page_args, $admin_url );
+}
+
+/**
  * Redirects back to the exporter admin page.
  *
  * @since 2.0.0
@@ -381,12 +533,7 @@ function sse_chmod_private_file( string $file_path ): bool {
  * @return never
  */
 function sse_redirect_to_exporter_page( array $args = [] ): never {
-	wp_safe_redirect(
-		add_query_arg(
-			$args,
-			admin_url( 'tools.php?page=enginescript-site-exporter' )
-		)
-	);
+	wp_safe_redirect( sse_get_exporter_admin_page_url( $args ) );
 	exit; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Required after wp_safe_redirect().
 }
 
@@ -405,25 +552,54 @@ function sse_wp_die( string $message, int $response = 500 ): never {
 		esc_html( $message ),
 		'',
 		[
-			'response' => absint( $response ),
+			'response' => (int) absint( $response ),
 		]
 	);
 }
 
 /**
- * Initializes the WordPress Filesystem API.
+ * Gets WordPress' mutable global filesystem transport when it is direct.
  *
- * Centralizes the repeated WP_Filesystem initialization pattern
- * used across multiple functions.
- *
- * @since 2.0.0
- * @return true|WP_Error True on success, WP_Error on failure.
+ * @since 2.1.1
+ * @return WP_Filesystem_Direct|null Current verified direct transport, or null.
  */
-function sse_init_filesystem() {
-	global $wp_filesystem;
+function sse_get_direct_global_filesystem(): ?WP_Filesystem_Direct {
+	if ( isset( $GLOBALS['wp_filesystem'] ) && $GLOBALS['wp_filesystem'] instanceof WP_Filesystem_Direct ) {
+		return $GLOBALS['wp_filesystem'];
+	}
 
-	if ( ! empty( $wp_filesystem ) ) {
-		return true;
+	return null;
+}
+
+/**
+ * Gets WordPress' database object from its mutable global boundary.
+ *
+ * @since 2.1.1
+ * @return wpdb|null Current database object, or null when unavailable.
+ */
+function sse_get_wordpress_database(): ?wpdb {
+	if ( isset( $GLOBALS['wpdb'] ) && $GLOBALS['wpdb'] instanceof wpdb ) {
+		return $GLOBALS['wpdb'];
+	}
+
+	return null;
+}
+
+/**
+ * Gets a verified direct WordPress filesystem instance.
+ *
+ * Export operations require local path semantics for archive streaming,
+ * executable validation, and atomic cleanup. Credential-backed transports do
+ * not provide those guarantees, so fail closed unless WordPress selects the
+ * direct transport.
+ *
+ * @since 2.1.1
+ * @return WP_Filesystem_Direct|WP_Error Direct filesystem instance on success.
+ */
+function sse_get_filesystem(): WP_Filesystem_Direct|WP_Error {
+	$filesystem = sse_get_direct_global_filesystem();
+	if ( null !== $filesystem ) {
+		return $filesystem;
 	}
 
 	/**
@@ -433,9 +609,15 @@ function sse_init_filesystem() {
 	 */
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	if ( ! WP_Filesystem() ) {
-		sse_log( 'Failed to initialize WordPress filesystem API', 'error' );
-		return new WP_Error( 'filesystem_init_failed', __( 'Failed to initialize WordPress filesystem API.', 'enginescript-site-exporter' ) );
+		sse_log( 'Failed to initialize the WordPress Filesystem API.', 'error' );
+		return new WP_Error( 'filesystem_init_failed', __( 'Failed to initialize the WordPress Filesystem API.', 'enginescript-site-exporter' ) );
 	}
 
-	return true;
+	$filesystem = sse_get_direct_global_filesystem();
+	if ( null === $filesystem ) {
+		sse_log( 'Export operations require the direct WordPress filesystem transport.', 'error' );
+		return new WP_Error( 'filesystem_method_unsupported', __( 'This server does not provide the direct filesystem access required for secure exports.', 'enginescript-site-exporter' ) );
+	}
+
+	return $filesystem;
 }

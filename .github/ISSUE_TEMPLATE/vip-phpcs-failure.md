@@ -1,36 +1,43 @@
 ---
-title: WordPress VIP Coding Standards Failure - PHP ${{ env.PHP_VERSION }}
-labels: ['vip-standards', 'coding-standards', 'needs-review', 'php-${{ env.PHP_VERSION }}']
+title: WordPress VIP Coding Standards Failure - PHP {{ env.PHP_VERSION }}
+labels: ['vip-standards', 'coding-standards', 'needs-review', 'php-{{ env.PHP_VERSION }}']
 assignees: []
 ---
 
 ## WordPress VIP Coding Standards Failure
 
-**PHP Version:** ${{ env.PHP_VERSION }}
-**Run ID:** ${{ env.RUN_ID }}
-**Workflow:** [View Failed Run](${{ env.WORKFLOW_URL }})
+The VIP coding-standards job failed. Inspect the failure stage and original check output.
+
+**Failure stage:** `{{ env.FAILURE_STAGE }}`
+
+**PHP Version:** {{ env.PHP_VERSION }}
+**Run ID:** {{ env.RUN_ID }}
+**Workflow:** [View Failed Run]({{ env.WORKFLOW_URL }})
 
 ### Issue Description
 
-The WordPress VIP coding standards check has failed during the automated workflow. This scan specifically checks for enterprise-level WordPress development standards required for WordPress VIP platform compatibility.
+If the VIP scan ran, its output concerns enterprise-level WordPress VIP requirements. Otherwise, resolve the failed prerequisite first.
 
 ### VIP Standards Focus Areas
 
 The WordPress VIP Go coding standards check for:
 
 🏢 **Enterprise Platform Requirements:**
+
 - File system operation restrictions (VIP platform limitations)
 - Performance and caching best practices for high-traffic sites
 - Security vulnerabilities specific to enterprise WordPress environments
 - User experience guidelines for enterprise-level WordPress
 
 🚀 **Performance & Caching:**
+
 - Uncached function usage patterns
 - Database query optimization
 - Remote data fetching best practices
 - Resource-heavy operation detection
 
 🔒 **VIP-Specific Security:**
+
 - File operation security in restricted environments
 - Admin bar removal restrictions for VIP support users
 - Cookie and caching constraint validations
@@ -39,6 +46,7 @@ The WordPress VIP Go coding standards check for:
 ### Important Notes
 
 ⚠️ **VIP Standards Context:**
+
 - Many VIP standards are specific to the WordPress VIP hosting platform
 - Not all VIP recommendations may apply to standard WordPress installations
 - Some restrictions are platform-specific (e.g., file system limitations)
@@ -64,8 +72,8 @@ The WordPress VIP Go coding standards check for:
 
 ### Workflow Information
 
-**Failed Workflow Run:** [View Details](${{ env.WORKFLOW_URL }})
-**PHP Version Tested:** ${{ env.PHP_VERSION }}
+**Failed Workflow Run:** [View Details]({{ env.WORKFLOW_URL }})
+**PHP Version Tested:** {{ env.PHP_VERSION }}
 **Standards Used:** WordPress-VIP-Go ruleset
 
 This issue was automatically created when the WordPress VIP coding standards check failed. Please review the specific violations in the workflow logs and address them according to your project's deployment requirements.

@@ -12,13 +12,13 @@ Export your entire WordPress site as a secure downloadable EngineScript-compatib
 
 == Description ==
 
-EngineScript Site Exporter provides WordPress administrators with a straightforward, secure way to export their entire website. With a single click, you can create a complete backup of your site's files and the database, perfect for site migrations, backups, or local development environments.
+EngineScript Site Exporter lets authorized WordPress administrators export the database and eligible files under the WordPress installation directory for migration or backup. File exclusions and resource limits apply; verify the archive before relying on it as a backup.
 
 Key features:
-* One-Click Export: Create a complete site backup with just one click
+* One-Click Export: Start a site export from the WordPress admin page
 * EngineScript Archive Format: Creates the combined ZIP format accepted by EngineScript's current vhost-import.sh
 * Database Export: Includes a gzip-compressed database dump in your export
-* Automatic Cleanup: Exports are automatically deleted after 5 minutes to enhance security
+* Automatic Cleanup: Schedules export deletion for 5 minutes after creation
 * Secure Downloads: All exports use WordPress security tokens for protected access
 * WP-CLI Integration: Requires WP-CLI for efficient database exports
 * Export Management: Download or manually delete export files as needed
@@ -27,7 +27,7 @@ Key features:
 This plugin does not detect or require an EngineScript server. It can run on standard WordPress installations, while the generated archive format is designed for the EngineScript LEMP server import workflow:
 
 * Compatible Exports: Exports use the ZIP container expected by EngineScript's site import tools
-* Streamlined Migrations: Export from any WordPress site and import directly to an EngineScript-powered server
+* Streamlined Migrations: Export from a WordPress site that meets the requirements below for import into an EngineScript-powered server
 * Format Optimization: The bundle layout matches EngineScript's manifest.txt plus compressed database/files archive format
 
 The export format matches EngineScript's canonical combined site archive:
@@ -42,14 +42,18 @@ The downloaded ZIP is named `<site>_enginescript_site_export_<timestamp>.zip`.
 
 1. Upload the plugin files to the `/wp-content/plugins/enginescript-site-exporter` directory, or install the plugin through the WordPress plugins screen directly.
 2. Activate the plugin through the 'Plugins' screen in WordPress.
-3. Navigate to Tools → Site Exporter in your WordPress admin.
-4. Click the "Export Site" button to create a full site backup.
+3. On a single-site installation, navigate to Tools → Site Exporter. On multisite, use Settings → Site Exporter in Network Admin.
+4. Click the "Export Site" button to create a site archive.
+
+Exports require 64-bit PHP 8.2 or higher with ZipArchive, PharData, and gzip support, plus direct local filesystem access through the WordPress Filesystem API and a private writable temporary directory outside the WordPress web root.
+
+Database exports require a POSIX host with PHP's POSIX functions, a trusted `/usr/bin/setsid` or `/bin/setsid` executable, and WP-CLI at a trusted configured path. These prerequisites let the exporter stop the complete WP-CLI/database-client process group on failure or timeout; unsupported hosts fail closed before process launch.
 
 == Frequently Asked Questions ==
 
 = How large of a site can I export? =
 
-The plugin is designed to work with most WordPress sites, but very large sites (multiple GB) may encounter timeout or memory limitations depending on your hosting environment.
+Default limits are 250,000 source entries, 50 GiB of source data, 100 GiB of generated files, 30 minutes of processing time, and a 1 GiB free-disk reserve. Server administrators can tune the export filters; hosting limits may stop work earlier. The per-file size selector does not disable these overall limits.
 
 = Where are the export files stored? =
 
@@ -58,17 +62,23 @@ Exports are staged in WordPress' temporary directory under:
 
 Each export is written inside a random private child directory with private filesystem permissions. For security, the plugin refuses to export if the export directory resolves inside the WordPress web root. Configure `WP_TEMP_DIR` to a private writable path if your host's default temporary directory is public.
 
-= Why do export files disappear after 5 minutes? =
+= When are export files deleted? =
 
-For security and disk space considerations, all exports are automatically deleted after 5 minutes. This ensures sensitive site data isn't left stored indefinitely.
+The plugin schedules deletion for 5 minutes after creation to reduce the time sensitive data remains on the server. Actual deletion depends on WordPress cron running successfully, so it may occur later. Download the archive promptly and delete it manually when finished. If `DISABLE_WP_CRON` is enabled, configure an external cron runner.
 
 = Can I create multiple exports? =
 
-Yes, you can create as many exports as needed. Each export is staged in its own random private directory.
+Yes, sequentially. Only one export can run at a time within a single-site installation or the current multisite network. Each export uses a separate random private directory.
 
 = Does this include my themes and plugins? =
 
-Yes, the export includes your entire WordPress installation: themes, plugins, uploads, and the complete database.
+The export includes eligible themes, plugins, uploads, and other files under the WordPress installation directory, plus the database dump. It skips symbolic links, unreadable entries, selected cache and temporary paths, certain hidden files, and files excluded by the chosen per-file size limit. Files outside that directory, such as a parent-directory `wp-config.php`, are not included. On multisite, the export covers the network database and shared installation, not just one blog.
+
+= What information is logged? =
+
+When both `WP_DEBUG` and `WP_DEBUG_LOG` are enabled, the plugin writes diagnostic messages to the WordPress debug log. It also stores up to 20 error or security records per site in the database, including the time, severity, message, user ID, and client IP address when available. Stored messages redact local absolute paths and are limited to 1,000 bytes.
+
+Database records older than seven days are removed when housekeeping, recovery, or a later log write runs; cron delays can extend that period. The WordPress debug log is separate: messages there can include local paths, and its retention and access controls are managed by the host. Review and redact logs before sharing them.
 
 = Can I use this plugin with non-EngineScript servers? =
 
@@ -76,7 +86,7 @@ Absolutely. The plugin does not require an EngineScript server; it creates an ar
 
 = Will this work on shared hosting environments? =
 
-Yes, the plugin is designed to be compatible with most shared hosting environments. However, large sites may encounter timeout or memory limitations on restrictive hosting plans.
+It can, provided the host meets the PHP, POSIX process-supervision, WP-CLI, and private temporary-directory requirements above. Hosts that disable the required process functions or do not provide a trusted `setsid` executable are not supported for database exports. Large sites may also encounter host-specific memory or storage limits.
 
 == License ==
 
@@ -97,17 +107,34 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 == Changelog ==
 
+Released entries describe their historical versions, including earlier tool results and security claims. They are not guarantees about the current build; see the current installation instructions and FAQs for supported behavior.
+
 = 2.1.1 - Unreleased =
+* **Security**: Refresh executable metadata before identity checks, verify root-owned executables by native numeric UID, retain PHP 8.2 child exit status across group-liveness polls, cap each diagnostic read at 32 KiB, reject non-removable download output buffers without emitting cleanup warnings, and stop the owned WP-CLI/database-client POSIX process group on failure or timeout
 * **Security**: On multisite, exporter page access, export creation, secure download, and manual delete now require a super admin or `manage_network_options`; single-site installs continue to require `manage_options`
 * **Security**: Exports are staged in random private child directories with symlink/pre-existing directory rejection and enforced `0700` directory permissions
 * **Security**: Export artifacts now use private umask handling plus WordPress Filesystem-backed `0600` chmod verification for database dumps, compressed payloads, file archives, manifests, final ZIPs, and protection files
 * **Security**: WP-CLI discovery now prefers `/usr/local/bin/wp` and `/usr/bin/wp`; alternate executables must be explicitly configured and pass ownership/writable-mode checks
 * **Security**: Generated download and delete actions include the private export directory identifier in request data and nonce actions
-* **Cleanup**: Bulk cleanup now scans generated private export directories through the WordPress Filesystem API, removes empty private export directories after deletion, and cleans failed export staging directories through the WordPress Filesystem API for VIP compatibility
+* **Security**: WP-CLI database exports now use shell-free argument execution with executable identity checks, live output monitoring, remaining-budget-derived timeouts, and bounded graceful/forced termination
+* **Security**: Download, deletion, and cleanup routes now require generated private directories; downloads stream an identity-checked open handle only after all output buffers are cleared
+* **Security**: Replaced the transient export lock with a renewable owner-bound current-site or current-network lease plus byte-exact release and scheduled stale recovery
+* **Security**: Added filterable aggregate entry, source-byte, generated-byte, elapsed-time, and free-disk limits with live SQL, gzip, TAR, and ZIP accounting
+* **Privacy**: Stored security/error logs now validate record shape, redact local paths, expire after seven days through recurring housekeeping, and remain capped at 20 entries
+* **Cleanup**: Bulk cleanup excludes the active lease directory, immediate failure cleanup removes newly created staging directories, and owner-bound recovery removes interrupted private staging directories through containment-checked deletion
 * **Architecture**: Replaced direct file metadata checks, generated artifact verification, export cleanup directory scans, and filename basename extraction with WordPress Filesystem API methods and native WordPress helpers where available
+* **Architecture**: Export operations now require WordPress' direct local filesystem transport and cleanup cron scheduling records native `WP_Error` diagnostics
+* **Architecture**: Filesystem and database callers now use typed WordPress boundary accessors, including the native `%i` database-table identifier placeholder, instead of rereading mixed globals
+* **Architecture**: The exporter remains beneath Tools on single-site installations and appears only beneath Settings in Network Admin on multisite; redirects and page-scoped assets use the matching canonical WordPress admin contract
+* **Architecture**: TAR creation now uses a private umask, buffers entry mutations to avoid per-file archive rewrites, enforces cumulative projected capacity, and verifies permissions after PharData materializes the archive
+* **Architecture**: PHP's request timer now aligns with the filterable export-time policy, capped at 30 minutes, instead of allowing a default 30-second limit to abort valid archive work
+* **PHP**: Added native PHP 8.2 union types and modern syntax, and moved 64-bit/archive prerequisite checks before directory, WP-CLI, resource-limit, or database work
+* **Accessibility**: Updated warning text for WCAG AA normal-text contrast and forced-colors support while preserving keyboard focus and responsive action wrapping
+* **Tooling**: Removed broad Psalm suppressions in favor of narrow source-boundary annotations; strict Psalm level 1 and PHPStan max now report no errors without new suppressions or weaker policy
 * **Tooling**: Added VIP Coding Standards as a Composer-managed dev dependency so PHPCS can run the VIP ruleset reproducibly
 * **Tooling**: Added a Composer-managed semantic versioning library for future version-related tests
-* **Documentation**: Updated WP-CLI, multisite authorization, and private export storage guidance
+* **Documentation**: Updated WP-CLI, multisite authorization, canonical admin navigation, and private export storage guidance
+* **Text and Localization**: Clarified scheduled cleanup, file exclusions, size limits, runtime requirements, and debug-log privacy; corrected user messages and developer comments; regenerated the translation catalog
 
 = 2.1.0 =
 * **Security**: Added `.htaccess` file to export directory with `Deny from all` rules to prevent direct HTTP access to export files

@@ -8,27 +8,31 @@ assignees: []
 
 ## PHPCS WordPress Coding Standards Failure
 
-The automated PHP CodeSniffer (PHPCS) test has detected coding standard violations in the EngineScript Site Exporter plugin.
+The PHPCS job failed. Setup and dependency failures do not establish coding-standard violations.
+
+**Failure stage:** `{{ env.FAILURE_STAGE }}`
 
 ### Details
 
 - **PHP Version:** {{ env.PHP_VERSION }}
-- **WordPress Version:** Latest
+- **WordPress Stubs:** See the resolved dependency versions in run diagnostics
 - **Test Date:** {{ date | date('YYYY-MM-DD HH:mm:ss') }}
 - **Workflow Run:** [View detailed logs]({{ env.WORKFLOW_URL }})
 
 ### Next Steps
 
-This issue has been automatically created because the EngineScript Site Exporter plugin failed to meet WordPress coding standards. PHPCS checks for:
+If PHPCS reached analysis, inspect its output for violations of the configured standards:
 
-#### Checked Standards:
+#### Checked Standards
+
 1. **WordPress Core**: Core WordPress coding standards
 2. **WordPress Extra**: Extended WordPress coding standards
 3. **WordPress VIP**: WordPress VIP-specific standards
 4. **Security Standards**: Security-focused coding practices
 5. **PSR-12**: PHP-FIG PSR-12 basic coding standard
 
-#### Common Issues:
+#### Common Issues
+
 - Improper variable naming conventions
 - Missing or incorrect code documentation
 - Incorrect indentation or spacing
@@ -36,28 +40,18 @@ This issue has been automatically created because the EngineScript Site Exporter
 - Improper use of WordPress functions
 - File and class naming violations
 
-#### Recommended Actions:
+#### Recommended Actions
 
 1. **Review Logs**: Check the workflow logs for specific PHPCS violations
-2. **Local Testing**: Run PHPCS locally to see detailed error reports
+2. **Inspect GitHub Diagnostics**: Review the failed stage and its original runner logs
 3. **Auto-Fix**: Use `phpcbf` to automatically fix simple issues
 4. **Manual Fix**: Address security and logic issues manually
 5. **Validate**: Re-run PHPCS to confirm all issues are resolved
 
-#### Local Testing Commands:
-```bash
-# Install dependencies
-composer install
+#### Validation
 
-# Run PHPCS checks
-./vendor/bin/phpcs --standard=WordPress enginescript-site-exporter.php
-
-# Auto-fix simple issues
-./vendor/bin/phpcbf --standard=WordPress enginescript-site-exporter.php
-
-# Check specific files
-./vendor/bin/phpcs --standard=WordPress-Extra --report=full enginescript-site-exporter.php
-```
+Re-run the existing GitHub job after correcting the reported failure. Keep its
+remote dependency installation, cache policy, and configured rules unchanged.
 
 Once fixed, please close this issue and reference it in the changelog.
 

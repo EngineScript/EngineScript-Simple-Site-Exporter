@@ -58,19 +58,52 @@ if ( ! defined( 'SSE_EXPORT_ARCHIVE_MARKER' ) ) {
 	define( 'SSE_EXPORT_ARCHIVE_MARKER', 'enginescript_site_export' );
 }
 
+// Define conservative aggregate export resource limits.
+if ( ! defined( 'SSE_DEFAULT_MAX_EXPORT_ENTRIES' ) ) {
+	define( 'SSE_DEFAULT_MAX_EXPORT_ENTRIES', 250000 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_MAX_EXPORT_SOURCE_BYTES' ) ) {
+	define( 'SSE_DEFAULT_MAX_EXPORT_SOURCE_BYTES', 53687091200 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_MAX_EXPORT_GENERATED_BYTES' ) ) {
+	define( 'SSE_DEFAULT_MAX_EXPORT_GENERATED_BYTES', 107374182400 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_MIN_FREE_DISK_BYTES' ) ) {
+	define( 'SSE_DEFAULT_MIN_FREE_DISK_BYTES', 1073741824 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_MAX_EXPORT_SECONDS' ) ) {
+	define( 'SSE_DEFAULT_MAX_EXPORT_SECONDS', 1800 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_EXPORT_RECOVERY_GRACE_SECONDS' ) ) {
+	define( 'SSE_DEFAULT_EXPORT_RECOVERY_GRACE_SECONDS', 300 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_PROCESS_TERMINATION_GRACE_MILLISECONDS' ) ) {
+	define( 'SSE_DEFAULT_PROCESS_TERMINATION_GRACE_MILLISECONDS', 2000 );
+}
+
+if ( ! defined( 'SSE_DEFAULT_PROCESS_FORCE_GRACE_MILLISECONDS' ) ) {
+	define( 'SSE_DEFAULT_PROCESS_FORCE_GRACE_MILLISECONDS', 2000 );
+}
+
 // Define plugin file constant for use in included files.
 if ( ! defined( 'SSE_PLUGIN_FILE' ) ) {
 	define( 'SSE_PLUGIN_FILE', __FILE__ );
 }
 
 /**
- * WordPress Core Classes Documentation
+ * WordPress and PHP runtime dependencies.
  *
- * This plugin uses WordPress core classes which are automatically available
- * in the WordPress environment. These classes don't require explicit imports
- * or use statements as they are part of WordPress core.
+ * WordPress supplies WP_Error; PHP supplies the other classes below when the
+ * required extensions are enabled. Archive requirements are checked before
+ * export work begins. These global classes do not need namespace imports.
  *
- * Core classes used:
+ * Runtime classes used:
  *
  * @see WP_Error - WordPress error handling class
  * @see ZipArchive - PHP ZipArchive class
@@ -81,8 +114,6 @@ if ( ! defined( 'SSE_PLUGIN_FILE' ) ) {
  * @see SplFileInfo - PHP SPL file information class
  * @see RuntimeException - PHP runtime exception class
  * @see Exception - PHP base exception class
- *
- * @SuppressWarnings(PHPMD.MissingImport)
  */
 
 // Load plugin components.
@@ -105,8 +136,9 @@ require_once __DIR__ . '/includes/download.php';
  * @return void
  */
 function sse_init_plugin(): void {
-	// Hook admin menu creation.
+	// Hook single-site and multisite Network Admin menu creation.
 	add_action( 'admin_menu', 'sse_admin_menu' );
+	add_action( 'network_admin_menu', 'sse_network_admin_menu' );
 
 	// Hook admin assets.
 	add_action( 'admin_enqueue_scripts', 'sse_enqueue_admin_assets' );
@@ -120,6 +152,11 @@ function sse_init_plugin(): void {
 	// Hook bulk cleanup handler.
 	add_action( 'sse_bulk_cleanup_exports', 'sse_bulk_cleanup_exports_handler' );
 
+	// Hook independent stale-export recovery and recurring housekeeping.
+	add_action( 'sse_recover_expired_export', 'sse_recover_expired_export_handler' );
+	add_action( 'sse_export_housekeeping', 'sse_export_housekeeping_handler' );
+	sse_schedule_export_housekeeping();
+
 	// Hook secure download handler.
 	add_action( 'admin_post_sse_secure_download', 'sse_handle_secure_download' );
 
@@ -127,5 +164,24 @@ function sse_init_plugin(): void {
 	add_action( 'admin_post_sse_delete_export', 'sse_handle_export_deletion' );
 }
 
+/**
+ * Removes the recurring housekeeping event when the plugin is deactivated.
+ *
+ * Lease-specific recovery events are intentionally left in place so they are
+ * not discarded if the plugin is reactivated before recovery becomes due.
+ *
+ * @since 2.1.1
+ * @param bool $_network_wide Whether the plugin is being deactivated network-wide.
+ * @return void
+ */
+function sse_deactivate_plugin( bool $_network_wide = false ): void {
+	if ( $_network_wide ) {
+		sse_log( 'Exporter housekeeping is being deactivated in the current network context.', 'info' );
+	}
+
+	wp_clear_scheduled_hook( 'sse_export_housekeeping' );
+}
+
 // Initialize the plugin when all plugins are loaded.
 add_action( 'plugins_loaded', 'sse_init_plugin' );
+register_deactivation_hook( SSE_PLUGIN_FILE, 'sse_deactivate_plugin' );

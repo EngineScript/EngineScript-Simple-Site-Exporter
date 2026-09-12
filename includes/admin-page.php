@@ -5,24 +5,82 @@
  * @package EngineScript_Site_Exporter
  */
 
+/**
+ * Prevent direct execution of this component.
+ *
+ * @psalm-suppress ParadoxicalCondition Files may be requested outside the loaded plugin bootstrap.
+ */
 if ( ! defined( 'ABSPATH' ) ) {
 	return;
 }
 
 /**
- * Adds the Site Exporter page to the WordPress admin menu.
+ * Records the exact hook suffix returned for the current exporter page.
+ *
+ * @since 2.1.1
+ * @param string|false $hook_suffix Registered page hook, or false on failure.
+ * @return void
+ */
+function sse_set_exporter_page_hook_suffix( string|false $hook_suffix ): void {
+	if ( false === $hook_suffix || '' === $hook_suffix ) {
+		unset( $GLOBALS['sse_exporter_page_hook_suffix'] );
+		return;
+	}
+
+	$GLOBALS['sse_exporter_page_hook_suffix'] = $hook_suffix;
+}
+
+/**
+ * Gets the exact registered hook suffix for this request.
+ *
+ * @since 2.1.1
+ * @return string Registered page hook, or an empty string when unavailable.
+ */
+function sse_get_exporter_page_hook_suffix(): string {
+	return sse_normalize_string_value( $GLOBALS['sse_exporter_page_hook_suffix'] ?? '' );
+}
+
+/**
+ * Adds the Site Exporter page beneath Tools on a single-site installation.
  *
  * @since 1.0.0
  * @return void
  */
 function sse_admin_menu(): void {
-	add_management_page(
+	if ( is_multisite() ) {
+		return;
+	}
+
+	$page_hook = add_management_page(
 		__( 'EngineScript Site Exporter', 'enginescript-site-exporter' ), // Page title (escaped by WordPress core).
 		__( 'Site Exporter', 'enginescript-site-exporter' ),               // Menu title (escaped by WordPress core).
 		sse_get_exporter_menu_capability(), // Capability required.
 		'enginescript-site-exporter',
 		'sse_exporter_page_html'
 	);
+	sse_set_exporter_page_hook_suffix( $page_hook );
+}
+
+/**
+ * Adds one network-level Site Exporter page beneath Network Settings.
+ *
+ * @since 2.1.1
+ * @return void
+ */
+function sse_network_admin_menu(): void {
+	if ( ! is_multisite() ) {
+		return;
+	}
+
+	$page_hook = add_submenu_page(
+		'settings.php',
+		__( 'EngineScript Site Exporter', 'enginescript-site-exporter' ),
+		__( 'Site Exporter', 'enginescript-site-exporter' ),
+		sse_get_exporter_menu_capability(),
+		'enginescript-site-exporter',
+		'sse_exporter_page_html'
+	);
+	sse_set_exporter_page_hook_suffix( $page_hook );
 }
 
 /**
@@ -33,7 +91,8 @@ function sse_admin_menu(): void {
  * @return void
  */
 function sse_enqueue_admin_assets( string $hook_suffix ): void {
-	if ( 'tools_page_enginescript-site-exporter' !== $hook_suffix ) {
+	$exporter_page_hook = sse_get_exporter_page_hook_suffix();
+	if ( '' === $exporter_page_hook || $exporter_page_hook !== $hook_suffix ) {
 		return;
 	}
 
@@ -84,15 +143,15 @@ function sse_set_exporter_notice( array $notice ): void {
  * @return void
  */
 function sse_render_exporter_notices(): void {
-	$notice = get_transient( sse_get_exporter_notice_key() );
-	if ( ! is_array( $notice ) ) {
+	$notice = sse_normalize_array_value( get_transient( sse_get_exporter_notice_key() ) );
+	if ( [] === $notice ) {
 		return;
 	}
 
 	delete_transient( sse_get_exporter_notice_key() );
 
-	$type    = isset( $notice['type'] ) ? sanitize_key( (string) $notice['type'] ) : 'info';
-	$message = isset( $notice['message'] ) ? (string) $notice['message'] : '';
+	$type    = isset( $notice['type'] ) && is_string( $notice['type'] ) ? sanitize_key( $notice['type'] ) : 'info';
+	$message = isset( $notice['message'] ) && is_string( $notice['message'] ) ? $notice['message'] : '';
 
 	if ( 'export_success' === $type && isset( $notice['zip_result'] ) && is_array( $notice['zip_result'] ) ) {
 		$zip_result = $notice['zip_result'];
@@ -123,18 +182,29 @@ function sse_render_exporter_notices(): void {
  * @return void
  */
 function sse_render_export_success_notice( array $zip_result ): void {
-	$export_dir_name       = wp_basename( dirname( $zip_result['filepath'] ) );
-	$has_private_dir_param = sse_is_export_private_directory_name( $export_dir_name );
-	$download_args         = [
-		'action' => 'sse_secure_download',
-		'file'   => $zip_result['filename'],
-	];
-	$download_nonce_action = 'sse_secure_download_' . $zip_result['filename'];
-
-	if ( $has_private_dir_param ) {
-		$download_args['export_dir'] = $export_dir_name;
-		$download_nonce_action      .= '_' . $export_dir_name;
+	$export_dir_name = wp_basename( dirname( $zip_result['filepath'] ) );
+	$validation      = sse_validate_basic_export_file( $zip_result['filename'], $export_dir_name );
+	if (
+		! sse_is_export_private_directory_name( $export_dir_name )
+		|| wp_basename( $zip_result['filepath'] ) !== $zip_result['filename']
+		|| is_wp_error( $validation )
+		|| wp_normalize_path( $validation['filepath'] ) !== wp_normalize_path( $zip_result['filepath'] )
+	) {
+		sse_log( 'Skipped export success actions because the private file contract was invalid.', 'security' );
+		?>
+		<div class="notice notice-error is-dismissible">
+			<p><?php esc_html_e( 'The export was created, but secure download controls could not be generated.', 'enginescript-site-exporter' ); ?></p>
+		</div>
+		<?php
+		return;
 	}
+
+	$download_args         = [
+		'action'     => 'sse_secure_download',
+		'file'       => $zip_result['filename'],
+		'export_dir' => $export_dir_name,
+	];
+	$download_nonce_action = 'sse_secure_download_' . $zip_result['filename'] . '_' . $export_dir_name;
 
 	$download_url = wp_nonce_url(
 		add_query_arg(
@@ -146,10 +216,7 @@ function sse_render_export_success_notice( array $zip_result ): void {
 
 	$display_zip_path = wp_normalize_path( $zip_result['filepath'] );
 	$delete_confirm   = __( 'Are you sure you want to delete this export file?', 'enginescript-site-exporter' );
-	$delete_nonce     = 'sse_delete_export_' . $zip_result['filename'];
-	if ( $has_private_dir_param ) {
-		$delete_nonce .= '_' . $export_dir_name;
-	}
+	$delete_nonce     = 'sse_delete_export_' . $zip_result['filename'] . '_' . $export_dir_name;
 	?>
 	<div class="notice notice-success is-dismissible">
 		<div class="sse-notice-actions">
@@ -165,9 +232,7 @@ function sse_render_export_success_notice( array $zip_result ): void {
 				>
 					<input type="hidden" name="action" value="sse_delete_export">
 					<input type="hidden" name="file" value="<?php echo esc_attr( $zip_result['filename'] ); ?>">
-					<?php if ( $has_private_dir_param ) : ?>
-						<input type="hidden" name="export_dir" value="<?php echo esc_attr( $export_dir_name ); ?>">
-					<?php endif; ?>
+					<input type="hidden" name="export_dir" value="<?php echo esc_attr( $export_dir_name ); ?>">
 					<?php wp_nonce_field( $delete_nonce ); ?>
 					<button type="submit" class="button button-secondary sse-action-button">
 						<?php esc_html_e( 'Delete Export File', 'enginescript-site-exporter' ); ?>
@@ -231,13 +296,13 @@ function sse_exporter_page_html(): void {
 						</th>
 						<td>
 							<select name="sse_max_file_size" id="sse_max_file_size">
-								<option value="0"><?php esc_html_e( 'No limit (include all files)', 'enginescript-site-exporter' ); ?></option>
-								<option value="104857600"><?php esc_html_e( '100 MB', 'enginescript-site-exporter' ); ?></option>
-								<option value="524288000"><?php esc_html_e( '500 MB', 'enginescript-site-exporter' ); ?></option>
-								<option value="1073741824"><?php esc_html_e( '1 GB', 'enginescript-site-exporter' ); ?></option>
+								<option value="0"><?php esc_html_e( 'No per-file limit', 'enginescript-site-exporter' ); ?></option>
+								<option value="104857600"><?php esc_html_e( '100 MiB', 'enginescript-site-exporter' ); ?></option>
+								<option value="524288000"><?php esc_html_e( '500 MiB', 'enginescript-site-exporter' ); ?></option>
+								<option value="1073741824"><?php esc_html_e( '1 GiB', 'enginescript-site-exporter' ); ?></option>
 							</select>
 							<p class="description">
-								<?php esc_html_e( 'Files larger than this size will be excluded from the export. Choose "No limit" to include all files regardless of size.', 'enginescript-site-exporter' ); ?>
+								<?php esc_html_e( 'Files larger than this size are excluded. "No per-file limit" removes this size filter, but other exclusions and overall export limits still apply.', 'enginescript-site-exporter' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -255,7 +320,7 @@ function sse_exporter_page_html(): void {
 		</p>
 		<p class="sse-warning-text">
 			<?php esc_html_e( 'Security Notice:', 'enginescript-site-exporter' ); ?>
-			<?php esc_html_e( 'The exported ZIP file is served through WordPress admin and will be automatically deleted from the server 5 minutes after it is created.', 'enginescript-site-exporter' ); ?>
+			<?php esc_html_e( 'The exported ZIP file is available only to authorized administrators. Automatic deletion is scheduled for 5 minutes after creation, but may be delayed if WordPress cron does not run. Download the file promptly and delete it when finished.', 'enginescript-site-exporter' ); ?>
 		</p>
 	</div>
 	<?php

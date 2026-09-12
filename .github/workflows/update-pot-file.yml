@@ -45,7 +45,7 @@ jobs:
           wp i18n make-pot . "$POT_FILE" \
             --slug="$PLUGIN_SLUG" \
             --domain="$PLUGIN_SLUG" \
-            --skip-audit \
+            --include=enginescript-site-exporter.php,includes,js \
             --exclude=vendor,node_modules,tests,build,plugin-check-build,.git,.github,.private
 
           test -f "$POT_FILE"
@@ -55,18 +55,18 @@ jobs:
         run: |
           POT_FILE="languages/${PLUGIN_SLUG}.pot"
 
-          if git diff --quiet --ignore-matching-lines='^"POT-Creation-Date:' -- "$POT_FILE"; then
+          if ! git ls-files --error-unmatch "$POT_FILE" >/dev/null 2>&1; then
+            # git diff does not report untracked files; keep a newly generated POT.
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Translation file created"
+          elif git diff --quiet --ignore-matching-lines='^"POT-Creation-Date:' -- "$POT_FILE"; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "Translation file is up to date"
-            if git ls-files --error-unmatch "$POT_FILE" >/dev/null 2>&1; then
-              git restore -- "$POT_FILE"
-            else
-              rm -f "$POT_FILE"
-            fi
+            git restore -- "$POT_FILE"
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             echo "Translation file updated"
-            git diff --ignore-matching-lines='^"POT-Creation-Date:' -- "$POT_FILE" | head -80
+            git diff --ignore-matching-lines='^"POT-Creation-Date:' -- "$POT_FILE" | sed -n '1,80p'
           fi
 
       - name: Create Pull Request

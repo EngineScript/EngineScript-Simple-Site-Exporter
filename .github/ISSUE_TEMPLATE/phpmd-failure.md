@@ -8,20 +8,23 @@ assignees: []
 
 ## PHPMD Code Quality Analysis Failure
 
-The automated PHP Mess Detector (PHPMD) analysis has detected code quality issues in the EngineScript Site Exporter plugin.
+The PHPMD job failed. Setup and dependency failures do not establish code-quality defects.
+
+**Failure stage:** `{{ env.FAILURE_STAGE }}`
 
 ### Details
 
 - **PHP Version:** {{ env.PHP_VERSION }}
-- **WordPress Version:** Latest
+- **WordPress Stubs:** See the resolved dependency versions in run diagnostics
 - **Test Date:** {{ date | date('YYYY-MM-DD HH:mm:ss') }}
 - **Workflow Run:** [View detailed logs]({{ env.WORKFLOW_URL }})
 
 ### Next Steps
 
-This issue has been automatically created because the EngineScript Site Exporter plugin failed PHPMD code quality analysis. PHPMD detects:
+If PHPMD reached analysis, inspect its output for the following areas:
 
-#### Analyzed Areas:
+#### Analyzed Areas
+
 1. **Clean Code**: Code complexity and maintainability issues
 2. **Code Size**: Overly large classes, methods, or parameter lists
 3. **Design**: Poor object-oriented design patterns
@@ -29,13 +32,16 @@ This issue has been automatically created because the EngineScript Site Exporter
 5. **Unused Code**: Dead code that should be removed
 
 #### WordPress-Specific Configuration
+
 This project uses a WordPress-specific PHPMD configuration (`phpmd.xml`) that suppresses WordPress-standard patterns:
+
 - **Superglobals**: WordPress safely uses `$_GET`, `$_POST` with proper sanitization
 - **Exit Expressions**: Required for file downloads and security redirects
 - **Missing Imports**: WordPress core classes like `WP_Error` are auto-loaded
 - **Else Expressions**: Sometimes required for WordPress security patterns
 
-#### Common Issues:
+#### Common Issues
+
 - **Cyclomatic Complexity**: Methods with too many decision paths
 - **NPath Complexity**: Methods with too many execution paths
 - **Long Methods**: Methods that are too lengthy and should be split
@@ -45,34 +51,22 @@ This project uses a WordPress-specific PHPMD configuration (`phpmd.xml`) that su
 - **Superglobals**: Direct access to superglobal variables
 - **CamelCase Violations**: Inconsistent naming conventions
 
-#### Recommended Actions:
+#### Recommended Actions
 
 1. **Review Logs**: Check the workflow logs for specific PHPMD violations
-2. **Local Analysis**: Run PHPMD locally to get detailed reports
+2. **Inspect GitHub Diagnostics**: Review the failed stage and its original runner logs
 3. **Refactor Code**: Break down complex methods and classes
 4. **Remove Dead Code**: Eliminate unused variables and methods
 5. **Improve Naming**: Use consistent and descriptive naming
 6. **Validate**: Re-run PHPMD to confirm improvements
 
-#### Local Testing Commands:
-```bash
-# Install dependencies
-composer install
+#### Validation
 
-# Run PHPMD with WordPress-specific configuration (recommended)
-./vendor/bin/phpmd enginescript-site-exporter.php text phpmd.xml
+Re-run the existing GitHub job after correcting the reported failure. Keep its
+remote dependency installation, cache policy, and configured rules unchanged.
 
-# Run PHPMD with standard rules (may show WordPress-specific warnings)
-./vendor/bin/phpmd enginescript-site-exporter.php text cleancode,codesize,design,naming,unusedcode
+#### Example Fixes
 
-# Generate HTML report with WordPress config
-./vendor/bin/phpmd enginescript-site-exporter.php html phpmd.xml --reportfile phpmd-report.html
-
-# Check specific rules with high priority
-./vendor/bin/phpmd enginescript-site-exporter.php text codesize --minimumpriority 1
-```
-
-#### Example Fixes:
 ```php
 // Before: High complexity
 function complex_function($a, $b, $c, $d, $e) {

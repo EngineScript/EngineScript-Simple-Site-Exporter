@@ -6,19 +6,21 @@
 [![PHP Compatible](https://img.shields.io/badge/PHP-8.2%2B-purple.svg?logo=php)](https://www.php.net/)
 
 ## Current Version
+
 [![Version](https://img.shields.io/badge/Version-2.1.0-orange.svg?logo=github)](https://github.com/EngineScript/enginescript-site-exporter/releases/latest/download/enginescript-site-exporter-2.1.0.zip)
 
 ## Description
+
 A WordPress plugin that exports your entire site, including files and the database, as a secure, downloadable EngineScript-compatible ZIP archive.
 
-EngineScript Site Exporter provides WordPress administrators with a straightforward, secure way to export their entire website. With a single click, you can create a complete backup of your site's files and the database, perfect for site migrations, backups, or local development environments.
+EngineScript Site Exporter lets authorized WordPress administrators export the database and eligible files under the WordPress installation directory for migration or backup. File exclusions and resource limits apply; verify the archive before relying on it as a backup.
 
 ### Key Features
 
-- **One-Click Export**: Create a complete site backup with just one click
+- **One-Click Export**: Start a site export from the WordPress admin page
 - **EngineScript Archive Format**: Creates the combined ZIP format accepted by EngineScript's current `vhost-import.sh`
 - **Database Export**: Includes a gzip-compressed database dump in your export
-- **Automatic Cleanup**: Exports are automatically deleted after 5 minutes to save disk space
+- **Automatic Cleanup**: Schedules export deletion for 5 minutes after creation
 - **Secure Downloads**: All exports use WordPress security tokens for protected access
 - **WP-CLI Integration**: Requires WP-CLI for efficient database exports
 - **Export Management**: Download or manually delete export files as needed
@@ -29,7 +31,7 @@ EngineScript Site Exporter provides WordPress administrators with a straightforw
 This plugin does not detect or require an EngineScript server. It can run on standard WordPress installations, while the generated archive format is designed for the [EngineScript LEMP server](https://github.com/EngineScript/EngineScript) import workflow:
 
 - **Compatible Exports**: Exports use the ZIP container expected by EngineScript's site import tools
-- **Streamlined Migrations**: Export from any WordPress site and import directly to an EngineScript-powered server
+- **Streamlined Migrations**: Export from a WordPress site that meets the requirements below for import into an EngineScript-powered server
 - **Format Optimization**: The bundle layout matches EngineScript's `manifest.txt` plus compressed database/files archive format
 
 The export format matches EngineScript's canonical combined site archive:
@@ -55,7 +57,7 @@ The downloaded ZIP is named `<site>_enginescript_site_export_<timestamp>.zip`.
 
 ### Creating a Site Export
 
-1. Navigate to Tools → Site Exporter in your WordPress admin
+1. On a single-site installation, navigate to Tools → Site Exporter. On multisite, use Settings → Site Exporter in Network Admin
 2. Click the "Export Site" button
 3. Wait for the export process to complete
 4. When finished, use the "Download Export File" button to save your backup
@@ -64,14 +66,16 @@ The downloaded ZIP is named `<site>_enginescript_site_export_<timestamp>.zip`.
 
 - **Download**: Click the "Download Export File" button next to any export
 - **Delete**: Click "Delete Export File" to remove an export you no longer need
-- **Auto-Cleanup**: Exports are automatically deleted after 5 minutes
+- **Auto-Cleanup**: Deletion is scheduled for 5 minutes after creation and runs when WordPress cron processes the event
 
 ## Requirements
 
 - WordPress 6.8 or higher
-- PHP 8.2 or higher
+- 64-bit PHP 8.2 or higher with ZipArchive, PharData, and gzip support
+- Direct local filesystem access through the WordPress Filesystem API
 - Write access to a private WordPress temporary directory. If your host's temp directory is inside the WordPress web root, configure `WP_TEMP_DIR` to a non-public writable path.
 - WP-CLI installed at `/usr/local/bin/wp` or `/usr/bin/wp` for database exports. To use another trusted executable, define `SSE_WP_CLI_PATH` or filter `sse_wp_cli_path`; local paths must pass ownership and permission checks.
+- A POSIX host with PHP's POSIX functions and a trusted `/usr/bin/setsid` or `/bin/setsid` executable. Database exports run in an owned process group so timeouts stop WP-CLI and its database-client descendants; unsupported hosts fail closed before starting the process.
 
 ## Security Features
 
@@ -82,7 +86,7 @@ EngineScript Site Exporter is built with security as a priority:
 - **Request Validation**: WordPress nonce validation for all admin actions
 - **Path Traversal Protection**: Comprehensive file path validation
 - **Private Export Storage**: Exports are staged in random private directories with `0700` directories and `0600` files
-- **Automatic Deletion**: Exports are automatically cleaned up after 5 minutes
+- **Automatic Deletion**: Schedules cleanup after 5 minutes; manual deletion is available if cron is delayed
 - **Security Headers**: Implements proper headers for download operations
 - **Secure File Handling**: Uses WordPress Filesystem API for file operations
 
@@ -90,7 +94,7 @@ EngineScript Site Exporter is built with security as a priority:
 
 ### How large of a site can I export?
 
-The plugin is designed to work with most WordPress sites, but very large sites (multiple GB) may encounter timeout or memory limitations depending on your hosting environment.
+Default limits are 250,000 source entries, 50 GiB of source data, 100 GiB of generated files, 30 minutes of processing time, and a 1 GiB free-disk reserve. Server administrators can tune the export filters; hosting limits may stop work earlier. The per-file size selector does not disable these overall limits.
 
 ### Where are the export files stored?
 
@@ -99,17 +103,23 @@ Exports are staged in WordPress' temporary directory under:
 
 Each export is written inside a random private child directory. For security, the plugin refuses to export if the export directory resolves inside the WordPress web root. Configure `WP_TEMP_DIR` to a private writable path if your host's default temporary directory is public.
 
-### Why do export files disappear after 5 minutes?
+### When are export files deleted?
 
-For security and disk space considerations, all exports are automatically deleted after 5 minutes. This ensures sensitive site data isn't left stored indefinitely.
+The plugin schedules deletion for 5 minutes after creation to reduce the time sensitive data remains on the server. Actual deletion depends on WordPress cron running successfully, so it may occur later. Download the archive promptly and delete it manually when finished. If `DISABLE_WP_CRON` is enabled, configure an external cron runner.
 
 ### Can I create multiple exports?
 
-Yes, you can create as many exports as needed. Each export is staged in its own random private directory.
+Yes, sequentially. Only one export can run at a time within a single-site installation or the current multisite network. Each export uses a separate random private directory.
 
 ### Does this include my themes and plugins?
 
-Yes, the export includes your entire WordPress installation: themes, plugins, uploads, and the complete database.
+The export includes eligible themes, plugins, uploads, and other files under the WordPress installation directory, plus the database dump. It skips symbolic links, unreadable entries, selected cache and temporary paths, certain hidden files, and files excluded by the chosen per-file size limit. Files outside that directory, such as a parent-directory `wp-config.php`, are not included. On multisite, the export covers the network database and shared installation, not just one blog.
+
+### What information is logged?
+
+When both `WP_DEBUG` and `WP_DEBUG_LOG` are enabled, the plugin writes diagnostic messages to the WordPress debug log. It also stores up to 20 error or security records per site in the database, including the time, severity, message, user ID, and client IP address when available. Stored messages redact local absolute paths and are limited to 1,000 bytes.
+
+Database records older than seven days are removed when housekeeping, recovery, or a later log write runs; cron delays can extend that period. The WordPress debug log is separate: messages there can include local paths, and its retention and access controls are managed by the host. Review and redact logs before sharing them.
 
 ### Can I use this plugin with non-EngineScript servers?
 

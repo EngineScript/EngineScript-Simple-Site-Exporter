@@ -1,7 +1,7 @@
 /*
  * EngineScript Site Exporter — Admin Scripts
  *
- * Enqueued only on the Site Exporter admin page (tools_page_enginescript-site-exporter).
+ * Enqueued only on the registered single-site or Network Admin exporter page.
  *
  * Package: EngineScript_Site_Exporter
  * Since:   2.0.0
