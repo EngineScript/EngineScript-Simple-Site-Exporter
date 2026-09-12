@@ -22,6 +22,7 @@ see the current README and Security Policy for supported behavior and guidance.
 
 ### Architecture
 
+- **Cleanup Entry Types**: Use WordPress directory-list entry fields directly instead of redundant type checks and array-key casts, retaining failed-read handling and cleanup safety checks.
 - **Canonical Admin Routing**: Kept the exporter beneath Tools on single-site installations and moved the full-network exporter beneath Settings in Network Admin on multisite. Redirects now use the matching canonical admin URL, and assets bind to the exact page hook returned by WordPress in either context.
 - **Private Export Cleanup**: Bulk cleanup now scans generated private export directories with the WordPress Filesystem API, excludes the active lease directory, and removes interrupted or failed private staging directories through immediate failure cleanup, owner-bound recovery, and containment-checked deletion.
 - **WordPress API Coverage**: Replaced direct file metadata checks, generated artifact verification, export cleanup directory scans, and filename basename extraction with WordPress Filesystem API methods and native WordPress helpers where available.

@@ -238,12 +238,8 @@ function sse_cleanup_stale_export_directories(): int {
 
 	$cutoff  = time() - sse_get_export_lease_lifetime();
 	$removed = 0;
-	foreach ( $entries as $entry_name => $entry ) {
-		if ( ! is_array( $entry ) ) {
-			continue;
-		}
-
-		$directory_name = isset( $entry['name'] ) && is_string( $entry['name'] ) ? $entry['name'] : (string) $entry_name;
+	foreach ( $entries as $entry ) {
+		$directory_name = $entry['name'];
 		$directory_path = trailingslashit( $export_dir ) . $directory_name;
 		if ( ! sse_is_stale_export_directory_entry( $entry, $directory_name, $directory_path, $active_directory, $cutoff, $filesystem ) ) {
 			continue;
@@ -376,12 +372,8 @@ function sse_get_export_files_for_bulk_cleanup( string $export_dir ): array {
 	}
 
 	$files = [];
-	foreach ( $dir_entries as $entry_name => $entry ) {
-		if ( ! is_array( $entry ) ) {
-			continue;
-		}
-
-		$files = array_merge( $files, sse_get_export_files_from_directory_entry( (string) $entry_name, $entry, $export_dir, $active_directory ) );
+	foreach ( $dir_entries as $entry ) {
+		$files = array_merge( $files, sse_get_export_files_from_directory_entry( $entry['name'], $entry, $export_dir, $active_directory ) );
 	}
 
 	return $files;
@@ -434,13 +426,9 @@ function sse_get_export_files_from_private_directory( string $directory ): array
 	}
 
 	$files = [];
-	foreach ( $private_entries as $entry_name => $entry ) {
-		if ( ! is_array( $entry ) ) {
-			continue;
-		}
-
-		$filename = isset( $entry['name'] ) && is_string( $entry['name'] ) ? $entry['name'] : (string) $entry_name;
-		$type     = isset( $entry['type'] ) && is_string( $entry['type'] ) ? $entry['type'] : '';
+	foreach ( $private_entries as $entry ) {
+		$filename = $entry['name'];
+		$type     = $entry['type'];
 		if ( sse_is_export_zip_entry( $filename, $type ) ) {
 			$files[] = trailingslashit( $directory ) . $filename;
 		}

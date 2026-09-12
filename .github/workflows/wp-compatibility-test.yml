@@ -1424,6 +1424,39 @@ jobs:
                   $this->assertTrue(function_exists('sse_admin_menu'), 'Plugin was not loaded correctly');
               }
 
+              public function test_cleanup_uses_directory_entry_fields() {
+                  $root = sys_get_temp_dir() . '/sse-test-' . wp_generate_uuid4();
+                  $zip = $root . '/site_enginescript_site_export_20260513_123456.zip';
+                  $had_filesystem = array_key_exists('wp_filesystem', $GLOBALS);
+                  $previous_filesystem = $GLOBALS['wp_filesystem'] ?? null;
+                  $this->assertTrue(mkdir($root, 0700));
+                  try {
+                      $this->assertSame(7, file_put_contents($zip, 'fixture'));
+                      $this->assertSame(7, file_put_contents($root . '/123', 'fixture'));
+                      $this->assertSame(7, file_put_contents($root . '/unrelated.txt', 'fixture'));
+                      $this->assertTrue(mkdir($root . '/nested.zip', 0700));
+                      $this->assertSame([$zip], sse_get_export_files_from_private_directory($root));
+                      $this->assertSame([], sse_get_export_files_from_private_directory($root . '/missing'));
+                      // This helper independently accepts broad arrays; retain its guards.
+                      $this->assertSame([], sse_get_export_files_from_directory_entry('fallback', ['name' => null, 'type' => null], $root, ''));
+                  } finally {
+                      foreach ([$zip, $root . '/123', $root . '/unrelated.txt'] as $file) {
+                          if (is_file($file)) {
+                              unlink($file);
+                          }
+                      }
+                      if (is_dir($root . '/nested.zip')) {
+                          rmdir($root . '/nested.zip');
+                      }
+                      rmdir($root);
+                      if ($had_filesystem) {
+                          $GLOBALS['wp_filesystem'] = $previous_filesystem;
+                      } else {
+                          unset($GLOBALS['wp_filesystem']);
+                      }
+                  }
+              }
+
               public function test_plugin_hooks_registered() {
                   $this->assertSame(10, has_action('admin_menu', 'sse_admin_menu'));
                   $this->assertSame(10, has_action('network_admin_menu', 'sse_network_admin_menu'));
