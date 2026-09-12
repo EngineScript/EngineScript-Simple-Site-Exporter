@@ -106,6 +106,9 @@ jobs:
         id: wordpress_plugin_check
         uses: WordPress/plugin-check-action@v1.1.7
         with:
+          # Comment only on trusted, same-repository human PRs. An empty token
+          # skips the action's optional comment, not checks or annotations.
+          repo-token: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]' && github.token || '' }}
           # Production-style plugin directory. Excludes repo-only files such as
           # .github, GEMINI.md, and other development artifacts.
           build-dir: './plugin-check-build/enginescript-site-exporter'

@@ -43,6 +43,7 @@ see the current README and Security Policy for supported behavior and guidance.
 
 ### Documentation
 
+- **Plugin Check Policy**: Document call-specific exceptions for supervised process creation, process-pipe cleanup, and the bounded request timer without weakening runtime safeguards. Update Tested up to to WordPress 7.1 based on the recorded compatibility matrix.
 - **Text and Localization**: Clarified scheduled cleanup, file exclusions, size limits, runtime requirements, and debug-log privacy; corrected user messages and developer comments; regenerated the translation catalog.
 - **Security and Navigation Requirements**: Updated README.md and readme.txt to describe trusted WP-CLI and POSIX process-supervision requirements, multisite authorization expectations, canonical single-site and Network Admin navigation, random private export directories, and private filesystem permissions.
 

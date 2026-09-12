@@ -693,7 +693,7 @@ function sse_raise_export_execution_time_limit(): void {
 		return;
 	}
 
-	set_time_limit( $target_limit );
+	set_time_limit( $target_limit ); // phpcs:ignore Squiz.PHP.DiscouragedFunctions.Discouraged -- Finite request timer capped by export policy; monotonic budgets and owner-bound recovery remain enforced.
 }
 
 /**
@@ -1612,7 +1612,7 @@ function sse_open_wp_cli_process( array $command ): array|WP_Error {
 	];
 	$pipes         = [];
 	$owned_command = array_merge( $launcher, $command );
-	$process       = proc_open( $owned_command, $descriptors, $pipes, null, null, [ 'bypass_shell' => true ] ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- A trusted setsid launcher owns the shell-free WP-CLI argument array as a dedicated process group.
+	$process       = proc_open( $owned_command, $descriptors, $pipes, null, null, [ 'bypass_shell' => true ] ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open,Generic.PHP.ForbiddenFunctions.Found -- Verified executables and shell-free argv run in an owned, time-bounded process group; WP_Filesystem cannot create or supervise processes.
 	if ( ! is_resource( $process ) ) {
 		return new WP_Error( 'wp_cli_start_failed', __( 'Could not start the WP-CLI database export.', 'enginescript-site-exporter' ) );
 	}
@@ -1628,14 +1628,14 @@ function sse_open_wp_cli_process( array $command ): array|WP_Error {
 	if ( $status['running'] && posix_getpgid( $process_group_id ) !== $process_group_id ) {
 		proc_terminate( $process, 9 );
 		foreach ( $pipes as $pipe ) {
-			fclose( $pipe );
+			fclose( $pipe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close owned proc_open pipes after failed supervision setup; these are not filesystem paths.
 		}
 		proc_close( $process );
 		return new WP_Error( 'wp_cli_process_supervision_failed', __( 'The WP-CLI database export could not be stopped safely.', 'enginescript-site-exporter' ) );
 	}
 
 	if ( isset( $pipes[0] ) ) {
-		fclose( $pipes[0] );
+		fclose( $pipes[0] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close child stdin to signal EOF; WP_Filesystem has no process-pipe API.
 		unset( $pipes[0] );
 	}
 	foreach ( $pipes as $pipe ) {
@@ -1716,7 +1716,7 @@ function sse_monitor_wp_cli_process( $process, int $process_group_id, array $pip
  */
 function sse_close_wp_cli_process_pipes( array $pipes ): void {
 	foreach ( $pipes as $pipe ) {
-		fclose( $pipe );
+		fclose( $pipe ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Release owned child-process streams; WP_Filesystem cannot close process pipes.
 	}
 }
 
