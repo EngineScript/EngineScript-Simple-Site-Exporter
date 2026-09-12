@@ -28,7 +28,7 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         configuration-path: .github/labeler.yml
         sync-labels: false
-    - uses: actions/stale@v10
+    - uses: actions/stale@v11
       with:
         days-before-stale: 30
         days-before-close: 7

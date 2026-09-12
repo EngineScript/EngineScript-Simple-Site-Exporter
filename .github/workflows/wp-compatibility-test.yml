@@ -104,7 +104,7 @@ jobs:
 
       - name: WordPress Plugin Check
         id: wordpress_plugin_check
-        uses: WordPress/plugin-check-action@v1.1.7
+        uses: WordPress/plugin-check-action@v1.1.9
         with:
           # Comment only on trusted, same-repository human PRs. An empty token
           # skips the action's optional comment, not checks or annotations.
@@ -170,7 +170,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-plugin-check
           path: |
@@ -270,7 +270,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-phpcs
           path: |
@@ -473,7 +473,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-vip-phpcs
           path: |
@@ -588,7 +588,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-phpmd
           path: |
@@ -679,7 +679,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-psalm-analysis
           path: |
@@ -840,7 +840,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-security-check
           path: |
@@ -945,7 +945,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-phpstan-wordpress
           path: |
@@ -1596,7 +1596,7 @@ jobs:
         id: upload_diagnostics
         if: ${{ always() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wp-compat-${{ matrix.php-version }}-${{ matrix.wp-version }}-${{ matrix.dependency-versions }}
           path: |
